@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Therapist</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.0/chart.min.js"></script>
+</head>
+<body class="light-theme">
+    <div class="container">
+        <div class="sidebar">
+            <h1>AI Therapist</h1>
+            <button id="newChatBtn" class="btn primary-btn">New Chat</button>
+
+            <div class="emotion-controls">
+                <button id="emotionToggleBtn" class="btn secondary-btn">
+                    Start Emotion Detection
+                </button>
+                
+                <div id="emotionStats" class="emotion-stats">
+                    <div class="stat-box">
+                        <h3>Current Emotion</h3>
+                        <p id="currentEmotion">-</p>
+                    </div>
+                    <div class="stat-box">
+                        <h3>Confidence</h3>
+                        <p id="confidence">-</p>
+                    </div>
+                    <div class="chart-container">
+                        <canvas id="emotionChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <button id="toggle-theme" class="btn theme-btn">Toggle Theme</button>
+        </div>
+
+        <!-- Main Chat Area -->
+        <div class="main-content">
+            <div id="chatWindow" class="chat-window">
+                <!-- Messages will be inserted here -->
+            </div>
+            
+            <div class="input-area">
+                <input type="text" id="user-input" placeholder="Type your message...">
+                <button id="send-btn" class="btn send-btn">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <video id="videoFeed" style="display: none;"></video> 
+
+    <script>
+        const toggleTheme = document.getElementById('toggle-theme');
+        const html = document.documentElement;
+        const chatWindow = document.getElementById('chatWindow');
+        const userInput = document.getElementById('user-input');
+        const sendBtn = document.getElementById('send-btn');
+        const emotionToggleBtn = document.getElementById('emotionToggleBtn');
+
+        toggleTheme.addEventListener('click', () => {
+            html.classList.toggle('dark-theme');
+            if (html.classList.contains('dark-theme')) {
+                toggleTheme.textContent = 'Light Mode';
+            } else {
+                toggleTheme.textContent = 'Dark Mode';
+            }
+        });
+
+        const rapidAPIKey = 'c68b25a06bmsha9accad09186357p15c316jsn45135fc7d2cb';
+        const rapidAPIHost = 'open-ai21.p.rapidapi.com';
+        const apiUrl = 'https://open-ai21.p.rapidapi.com/claude3';
+
+        function speakText(text) {
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.rate = 1; 
+            speechSynthesis.speak(utterance);
+        }
+
+        function addMessage(role, content, skipSpeech = false) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `p-3 rounded-lg ${role === 'user' ? 'bg-blue-100 ml-auto' : 'bg-gray-100'} max-w-3/4 mb-2`;
+            messageDiv.innerHTML = `<strong>${role === 'user' ? 'You' : 'Therapist'}:</strong> ${content}`;
+            chatWindow.appendChild(messageDiv);
+            chatWindow.scrollTop = chatWindow.scrollHeight;
+            if (role === 'therapist' && !skipSpeech) {
+                speakText(content);
+            }
+        }
+
+        async function getTherapistResponse(userMessage) {
+            const payload = {
+                messages: [
+                    {
+                        role: "system",
+                        content: "As a therapist, your role is to listen with empathy and ensure the user feels safe and understood. Begin by asking how they're feeling and, if they don't share emotions, gently prompt them with questions like 'What's been on your mind lately?' or 'Can you tell me more about what's been bothering you?' If the user expresses sadness or frustration, ask what triggered their feelings. Provide reassurance and hope, reminding them of their inner strength, while maintaining a positive and supportive tone. Avoid pushing them to open up if they're not ready, and always create an environment where they feel validated and supported"
+                    },
+                    {
+                        role: "user",
+                        content: userMessage
+                    }
+                ],
+                web_access: false
+            };
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'x-rapidapi-host': rapidAPIHost,
+                        'x-rapidapi-key': rapidAPIKey
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    throw new Error('Network response was not ok: ' + response.statusText);
+                }
+
+                const data = await response.json();
+                console.log('API Response:', data);
+
+                if (data.result) {
+                    return data.result;
+                } else {
+                    throw new Error('Unexpected response structure');
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                throw error;
+            }
+        }
+
+        async function handleSendMessage() {
+            const message = userInput.value.trim();
+            if (message) {
+                addMessage('user', message);
+                userInput.value = '';
+
+                try {
+                    const therapistResponse = await getTherapistResponse(message);
+                    addMessage('therapist', therapistResponse);
+                } catch (error) {
+                    console.error('Error getting therapist response:', error);
+                    addMessage('system', 'Sorry, there was an error processing your message. Please try again.');
+                }
+            }
+        }
+
+        sendBtn.addEventListener('click', handleSendMessage);
+        userInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSendMessage();
+            }
+        });
+
+        addMessage('therapist', "Hello! How are you feeling today? I'm here to listen and support you.", true);
+    </script>
+    <script>
+    <!-- Emotion Detection Script -->
+    let chart;
+    let isDetecting = false;
+    const emotionCounts = {
+        'angry': 0,
+        'disgust': 0,
+        'fear': 0,
+        'happy': 0,
+        'sad': 0,
+        'surprise': 0,
+        'neutral': 0
+    };
+
+    // Initialize the chart
+    function initChart() {
+        const ctx = document.getElementById('emotionChart').getContext('2d');
+        chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: Object.keys(emotionCounts),
+                datasets: [{
+                    label: 'Emotion Counts',
+                    data: Object.values(emotionCounts),
+                    borderColor: 'rgb(75, 192, 192)',
+                    tension: 0.1
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+    }
+
+    async function startDetection() {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            const videoElement = document.getElementById('videoFeed');
+            videoElement.srcObject = stream;
+            isDetecting = true;
+            simulateDetection();
+        } catch (err) {
+            console.error('Error accessing camera:', err);
+        }
+    }
+
+    function stopDetection() {
+        isDetecting = false;
+        const videoElement = document.getElementById('videoFeed');
+        const stream = videoElement.srcObject;
+        if (stream) {
+            stream.getTracks().forEach(track => track.stop());
+        }
+        videoElement.srcObject = null;
+    }
+
+async function processFrame() {
+if (!isDetecting) return;
+
+const videoElement = document.getElementById('videoFeed');
+const canvas = document.createElement('canvas');
+canvas.width = videoElement.videoWidth;
+canvas.height = videoElement.videoHeight;
+const ctx = canvas.getContext('2d');
+ctx.drawImage(videoElement, 0, 0);
+const frameData = canvas.toDataURL('image/jpeg');
+
+try {
+    const response = await fetch('http://localhost:5000/process-frame', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ frame: frameData })
+    });
+
+    if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    if (data.success) {
+        emotionCounts[data.dominant_emotion]++;
+        
+        document.getElementById('currentEmotion').textContent = data.dominant_emotion;
+        document.getElementById('confidence').textContent = 
+            `${(data.emotions[data.dominant_emotion]).toFixed(2)}%`;
+
+        chart.data.datasets[0].data = Object.values(emotionCounts);
+        chart.update();
+    }
+} catch (error) {
+    console.error('Error:', error);
+}
+
+if (isDetecting) {
+    requestAnimationFrame(processFrame);
+}
+}
+
+async function startDetection() {
+try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    const videoElement = document.getElementById('videoFeed');
+    videoElement.srcObject = stream;
+    isDetecting = true;
+    processFrame();  
+} catch (err) {
+    console.error('Error accessing camera:', err);
+}
+}
+</script>
+</body>
+</html>
