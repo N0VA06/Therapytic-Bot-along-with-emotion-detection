@@ -1,5 +1,6 @@
 # Therapytic-Bot-along-with-emotion-detection
-Runner up in Amrita Value health hackathon
+Runner up in Amrita Value health hackathon 
+For full code contact us at vijay@srinvas06@gmail.com
 
 
 Our chatbot is programmed to analyze and classify emotions based on your facial expression. The advanced facial recognition and emotion-detection algorithms enable the chatbot to interpret subtle changes in your facial features, even movements of the eyes, the mouth, and the eyebrows, thereby concluding what mood you are in. It translates this insight on emotions and builds-in the response of the chatbot so as to make it more personalized, empathetic, and contextually good at talking to you. It can get happy, angry, sad, or even neutral; thereby even the chatbots tone, language, and suggestions to modify the input intent to make it much more meaningful and engaging.
